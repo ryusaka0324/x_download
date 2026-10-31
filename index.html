@@ -133,17 +133,26 @@ details p{margin:8px 0}
   const resOf = u => { const m = u.match(/\/(\d+)x(\d+)\//); return m ? [+m[1], +m[2]] : null; };
   const mb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'GB' : Math.max(0.1, n / 1e6).toFixed(1) + 'MB';
 
-  function label(v, dur) {
-    const r = resOf(v.url);
-    const q = r ? `${Math.min(...r)}p` : '標準画質';
-    return v.bitrate && dur ? `${q}（約${mb(v.bitrate * dur / 8)}）` : q;
+  // APIのbitrateは上限値で実サイズの2〜6倍に出るため、表示には実ファイルのサイズを使う
+  async function sizeOf(url) {
+    try {
+      const r = await fetch(url, { method: 'HEAD', referrerPolicy: 'no-referrer' });
+      return +r.headers.get('content-length') || 0;
+    } catch { return 0; }
   }
 
-  // 既定はフルHD以下で最も高い画質（4Kはスマホの容量と時間を食うため手動選択）
-  function defaultIndex(list) {
-    const i = list.findIndex(v => { const r = resOf(v.url); return !r || Math.min(...r) <= 1080; });
-    return i < 0 ? 0 : i;
-  }
+  const label = (v, size) => {
+    const r = resOf(v.url);
+    const q = r ? `${Math.min(...r)}p` : '標準画質';
+    return size ? `${q}（${mb(size)}）` : q;
+  };
+
+  // 既定は最高画質。ただし200MBを超えるものはスマホのメモリを圧迫するため一段下げる
+  const LIMIT = 200e6;
+  const defaultIndex = sizes => {
+    const i = sizes.findIndex(n => n && n <= LIMIT);
+    return i < 0 ? sizes.length - 1 : i;
+  };
 
   function render(info, id) {
     out.innerHTML = '';
@@ -174,8 +183,11 @@ details p{margin:8px 0}
         <div class="state"></div>`;
       if (v.thumb) box.querySelector('img').src = v.thumb; else box.querySelector('img').remove();
       const sel = box.querySelector('select');
-      list.forEach((f, i) => sel.add(new Option(label(f, v.duration), i)));
-      sel.selectedIndex = defaultIndex(list);
+      list.forEach((f, i) => sel.add(new Option(label(f, 0), i)));
+      Promise.all(list.map(f => sizeOf(f.url))).then(sizes => {
+        sizes.forEach((n, i) => { sel.options[i].text = label(list[i], n); });
+        sel.selectedIndex = defaultIndex(sizes);
+      });
       const name = `${info.handle || 'x'}_${id}${info.vids.length > 1 ? '_' + (n + 1) : ''}.mp4`;
       box.querySelector('.save').addEventListener('click', e =>
         save(list[sel.value].url, name, box, e.currentTarget));
