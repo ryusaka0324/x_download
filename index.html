@@ -56,6 +56,7 @@ button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(
 select{flex:1;min-width:0;font:inherit;font-size:.95rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);
   border-radius:12px;padding:10px}
 .save{background:var(--ink);color:var(--bg);font-weight:700;padding:0 20px;white-space:nowrap}
+.again{display:block;width:100%;margin-top:10px;padding:13px;background:var(--accent);color:var(--accent-ink);font-weight:700}
 .bar{height:6px;border-radius:3px;background:var(--line);margin-top:12px;overflow:hidden;display:none}
 .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s linear}
 .state{font-size:.85rem;color:var(--sub);margin-top:6px}
@@ -85,7 +86,7 @@ details p{margin:8px 0}
   <details>
     <summary>保存がうまくいかないとき</summary>
     <p>iPhoneでは「保存」のあとに出る共有メニューで「ビデオを保存」を選ぶと写真アプリに入ります。</p>
-    <p>4Kなど大きい動画で止まる場合は、画質を一段下げるか「直接開く」から保存してください。</p>
+    <p>大きい動画で止まる場合は、画質を一段下げるか「直接開く」から保存してください。</p>
     <p>鍵アカウントや削除済みのポストの動画は取得できません。</p>
   </details>
 </main>
@@ -198,6 +199,13 @@ details p{margin:8px 0}
 
   async function save(src, name, box, btn) {
     const bar = box.querySelector('.bar'), fill = bar.firstElementChild, st = box.querySelector('.state');
+    box.querySelector('.again')?.remove();
+    const fail = e => {
+      st.className = 'state err';
+      st.innerHTML = '保存できませんでした（<span></span>）。<a target="_blank" rel="noopener noreferrer">直接開く</a>から長押しで保存してください。';
+      st.querySelector('span').textContent = e?.name || String(e);
+      st.querySelector('a').href = src;
+    };
     btn.disabled = true; bar.style.display = 'block'; fill.style.width = '0';
     st.className = 'state'; st.textContent = 'ダウンロード中…';
     try {
@@ -218,9 +226,32 @@ details p{margin:8px 0}
       const file = new File(chunks, name, { type: 'video/mp4' });
       const touch = matchMedia('(pointer: coarse)').matches;
       if (touch && navigator.canShare?.({ files: [file] })) {
+        // iOSは「タップ直後」でないと共有メニューを開かせない。
+        // ダウンロードに数秒以上かかるとタップの効力が切れるため、切れていたら改めてタップしてもらう
+        const share = async () => {
+          try {
+            await navigator.share({ files: [file] });
+            st.className = 'state ok'; st.textContent = '保存しました';
+            return true;
+          } catch (e) {
+            if (e.name === 'AbortError') { st.className = 'state'; st.textContent = '保存を取り消しました'; return true; }
+            if (e.name === 'NotAllowedError') return false;
+            throw e;
+          }
+        };
         st.textContent = '共有メニューから「ビデオを保存」を選んでください';
-        try { await navigator.share({ files: [file] }); st.className = 'state ok'; st.textContent = '保存しました'; }
-        catch (e) { if (e.name === 'AbortError') st.textContent = '保存を取り消しました'; else throw e; }
+        if (!(await share())) {
+          st.className = 'state ok';
+          st.textContent = `ダウンロードが終わりました（${mb(file.size)}）`;
+          const again = document.createElement('button');
+          again.type = 'button'; again.className = 'again'; again.textContent = '写真アプリに保存';
+          again.addEventListener('click', async () => {
+            again.disabled = true;
+            try { if (await share()) again.remove(); else again.disabled = false; }
+            catch (e) { again.remove(); fail(e); }
+          });
+          box.append(again);
+        }
       } else {
         const a = document.createElement('a');
         a.href = URL.createObjectURL(file); a.download = name;
@@ -229,9 +260,7 @@ details p{margin:8px 0}
         st.className = 'state ok'; st.textContent = `保存しました（${name}）`;
       }
     } catch (e) {
-      st.className = 'state err';
-      st.innerHTML = '保存できませんでした。<a target="_blank" rel="noopener noreferrer">直接開く</a>から長押しで保存してください。';
-      st.querySelector('a').href = src;
+      fail(e);
     } finally { btn.disabled = false; }
   }
 
