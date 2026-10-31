@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Xの動画を保存</title>
+<meta name="referrer" content="no-referrer">
+<meta name="description" content="Xのポストに含まれる動画を、スマホやPCに保存します">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="動画保存">
+<meta name="theme-color" content="#E9EEF4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121821" media="(prefers-color-scheme: dark)">
+<style>
+:root{
+  color-scheme:light;
+  --bg:#E9EEF4; --surface:#FFFFFF; --ink:#18212D; --sub:#5E6A7A; --line:#CCD5E0;
+  --accent:#2448D8; --accent-ink:#FFFFFF; --ok:#1C7A50; --err:#B3261E;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root{color-scheme:dark;
+    --bg:#121821; --surface:#1B2330; --ink:#E6ECF3; --sub:#97A3B3; --line:#2C3747;
+    --accent:#7C98FF; --accent-ink:#0E1420; --ok:#5CC793; --err:#FF8A80;}
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif;
+  font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%}
+main{max-width:560px;margin:0 auto;padding:28px 18px 48px}
+h1{font-size:1.5rem;line-height:1.3;margin:0 0 4px;letter-spacing:.02em}
+.lead{color:var(--sub);margin:0 0 22px;font-size:.92rem}
+.slot{background:var(--surface);border:1.5px solid var(--line);border-radius:18px;padding:6px;display:flex;gap:6px}
+.slot:focus-within{border-color:var(--accent)}
+.slot input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:inherit;padding:12px 10px;outline:none}
+button{font:inherit;border:0;border-radius:12px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.ghost{background:transparent;color:var(--accent);padding:0 12px;font-weight:600}
+.go{display:block;width:100%;margin-top:12px;padding:15px;background:var(--accent);color:var(--accent-ink);
+  font-weight:700;font-size:1.05rem;border-radius:16px}
+.go:disabled{opacity:.55}
+.msg{margin:16px 2px 0;font-size:.92rem;color:var(--sub);min-height:1.6em}
+.msg.err{color:var(--err)}
+.post{margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.who{padding:14px 16px 0;font-weight:700}
+.who small{font-weight:400;color:var(--sub);margin-left:6px}
+.text{margin:4px 16px 12px;color:var(--sub);font-size:.9rem;white-space:pre-wrap;word-break:break-word;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.vid{border-top:1px solid var(--line);padding:14px 16px 16px}
+.thumb{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;background:var(--line)}
+.row{display:flex;gap:8px;margin-top:12px;align-items:stretch}
+select{flex:1;min-width:0;font:inherit;font-size:.95rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);
+  border-radius:12px;padding:10px}
+.save{background:var(--ink);color:var(--bg);font-weight:700;padding:0 20px;white-space:nowrap}
+.bar{height:6px;border-radius:3px;background:var(--line);margin-top:12px;overflow:hidden;display:none}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s linear}
+.state{font-size:.85rem;color:var(--sub);margin-top:6px}
+.state.ok{color:var(--ok)} .state.err{color:var(--err)}
+.state a{color:var(--accent)}
+details{margin-top:34px;color:var(--sub);font-size:.88rem}
+summary{cursor:pointer;color:var(--ink);font-weight:600}
+details p{margin:8px 0}
+@media (prefers-reduced-motion: reduce){.bar i{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Xの動画を保存</h1>
+  <p class="lead">ポストのURLを貼ると、入っている動画を画質を選んで保存できます。</p>
+
+  <div class="slot">
+    <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+           placeholder="https://x.com/…/status/…" aria-label="ポストのURL">
+    <button class="ghost" id="paste" type="button">貼り付け</button>
+  </div>
+  <button class="go" id="go" type="button">動画を探す</button>
+  <p class="msg" id="msg" role="status" aria-live="polite"></p>
+
+  <div id="out"></div>
+
+  <details>
+    <summary>保存がうまくいかないとき</summary>
+    <p>iPhoneでは「保存」のあとに出る共有メニューで「ビデオを保存」を選ぶと写真アプリに入ります。</p>
+    <p>4Kなど大きい動画で止まる場合は、画質を一段下げるか「直接開く」から保存してください。</p>
+    <p>鍵アカウントや削除済みのポストの動画は取得できません。</p>
+  </details>
+</main>
+
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const urlIn = $('#url'), go = $('#go'), msg = $('#msg'), out = $('#out');
+
+  const say = (t, err = false) => { msg.textContent = t; msg.classList.toggle('err', err); };
+
+  const idOf = s => {
+    const m = String(s).match(/(?:x|twitter|fxtwitter|vxtwitter|fixupx)\.com\/[^\s/]+\/status(?:es)?\/(\d{1,25})/i)
+           || String(s).match(/^\s*(\d{1,25})\s*$/);
+    return m ? m[1] : null;
+  };
+
+  async function getJSON(u) {
+    const r = await fetch(u, { headers: { Accept: 'application/json' } });
+    const t = await r.text();
+    try { return JSON.parse(t); } catch { throw new Error('bad response'); }
+  }
+
+  // 公開APIを2系統使い、片方が落ちていても取得できるようにする
+  async function lookup(id) {
+    try {
+      const d = await getJSON(`https://api.fxtwitter.com/status/${id}`);
+      const t = d.tweet;
+      if (t) {
+        const vids = (t.media?.videos || []).map(v => ({
+          thumb: v.thumbnail_url, duration: v.duration || 0,
+          variants: (v.formats || v.variants || []).filter(f => f.container === 'mp4' || /\.mp4/.test(f.url))
+        }));
+        return { name: t.author?.name, handle: t.author?.screen_name, text: t.text, vids };
+      }
+    } catch (_) { /* 次の系統へ */ }
+    const d = await getJSON(`https://api.vxtwitter.com/i/status/${id}`);
+    if (!d || !d.tweetID) throw new Error('notfound');
+    const vids = (d.media_extended || []).filter(m => m.type === 'video' || m.type === 'gif')
+      .map(m => ({ thumb: m.thumbnail_url, duration: (m.duration_millis || 0) / 1000,
+                   variants: [{ url: m.url, bitrate: 0 }] }));
+    return { name: d.user_name, handle: d.user_screen_name, text: d.text, vids };
+  }
+
+  const resOf = u => { const m = u.match(/\/(\d+)x(\d+)\//); return m ? [+m[1], +m[2]] : null; };
+  const mb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'GB' : Math.max(0.1, n / 1e6).toFixed(1) + 'MB';
+
+  function label(v, dur) {
+    const r = resOf(v.url);
+    const q = r ? `${Math.min(...r)}p` : '標準画質';
+    return v.bitrate && dur ? `${q}（約${mb(v.bitrate * dur / 8)}）` : q;
+  }
+
+  // 既定はフルHD以下で最も高い画質（4Kはスマホの容量と時間を食うため手動選択）
+  function defaultIndex(list) {
+    const i = list.findIndex(v => { const r = resOf(v.url); return !r || Math.min(...r) <= 1080; });
+    return i < 0 ? 0 : i;
+  }
+
+  function render(info, id) {
+    out.innerHTML = '';
+    const post = document.createElement('section');
+    post.className = 'post';
+    const who = document.createElement('div');
+    who.className = 'who';
+    who.textContent = info.name || '';
+    const small = document.createElement('small');
+    small.textContent = info.handle ? '@' + info.handle : '';
+    who.append(small);
+    const text = document.createElement('div');
+    text.className = 'text';
+    text.textContent = info.text || '';
+    post.append(who, text);
+
+    info.vids.forEach((v, n) => {
+      const list = [...v.variants].sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      const box = document.createElement('div');
+      box.className = 'vid';
+      box.innerHTML = `
+        <img class="thumb" alt="動画${n + 1}のサムネイル" loading="lazy">
+        <div class="row">
+          <select aria-label="動画${n + 1}の画質"></select>
+          <button class="save" type="button">保存</button>
+        </div>
+        <div class="bar"><i></i></div>
+        <div class="state"></div>`;
+      if (v.thumb) box.querySelector('img').src = v.thumb; else box.querySelector('img').remove();
+      const sel = box.querySelector('select');
+      list.forEach((f, i) => sel.add(new Option(label(f, v.duration), i)));
+      sel.selectedIndex = defaultIndex(list);
+      const name = `${info.handle || 'x'}_${id}${info.vids.length > 1 ? '_' + (n + 1) : ''}.mp4`;
+      box.querySelector('.save').addEventListener('click', e =>
+        save(list[sel.value].url, name, box, e.currentTarget));
+      post.append(box);
+    });
+    out.append(post);
+  }
+
+  async function save(src, name, box, btn) {
+    const bar = box.querySelector('.bar'), fill = bar.firstElementChild, st = box.querySelector('.state');
+    btn.disabled = true; bar.style.display = 'block'; fill.style.width = '0';
+    st.className = 'state'; st.textContent = 'ダウンロード中…';
+    try {
+      // 動画CDNは外部サイトのRefererを付けた要求を403で拒否するため、Refererを送らない
+      const r = await fetch(src, { referrerPolicy: 'no-referrer' });
+      if (!r.ok) throw new Error('http ' + r.status);
+      const total = +r.headers.get('content-length') || 0;
+      const reader = r.body.getReader(), chunks = [];
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value); got += value.length;
+        if (total) { fill.style.width = (got / total * 100).toFixed(1) + '%'; st.textContent = `ダウンロード中… ${mb(got)} / ${mb(total)}`; }
+        else st.textContent = `ダウンロード中… ${mb(got)}`;
+      }
+      fill.style.width = '100%';
+      const file = new File(chunks, name, { type: 'video/mp4' });
+      const touch = matchMedia('(pointer: coarse)').matches;
+      if (touch && navigator.canShare?.({ files: [file] })) {
+        st.textContent = '共有メニューから「ビデオを保存」を選んでください';
+        try { await navigator.share({ files: [file] }); st.className = 'state ok'; st.textContent = '保存しました'; }
+        catch (e) { if (e.name === 'AbortError') st.textContent = '保存を取り消しました'; else throw e; }
+      } else {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(file); a.download = name;
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+        st.className = 'state ok'; st.textContent = `保存しました（${name}）`;
+      }
+    } catch (e) {
+      st.className = 'state err';
+      st.innerHTML = '保存できませんでした。<a target="_blank" rel="noopener noreferrer">直接開く</a>から長押しで保存してください。';
+      st.querySelector('a').href = src;
+    } finally { btn.disabled = false; }
+  }
+
+  async function run() {
+    const id = idOf(urlIn.value);
+    out.innerHTML = '';
+    if (!id) { say('XのポストのURL（…/status/数字）を貼ってください', true); return; }
+    go.disabled = true; say('ポストを読み込んでいます…');
+    try {
+      const info = await lookup(id);
+      if (!info.vids.length) { say('このポストには動画がありません', true); return; }
+      say(info.vids.length > 1 ? `動画が${info.vids.length}本あります` : '');
+      render(info, id);
+    } catch (e) {
+      say('ポストを取得できませんでした。鍵アカウント・削除済み・URLの誤りのいずれかです', true);
+    } finally { go.disabled = false; }
+  }
+
+  go.addEventListener('click', run);
+  urlIn.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+  $('#paste').addEventListener('click', async () => {
+    try { urlIn.value = (await navigator.clipboard.readText()).trim(); run(); }
+    catch { urlIn.focus(); say('長押しして「ペースト」で貼り付けてください'); }
+  });
+
+  // Androidの共有メニューやショートカットから ?url= / ?text= で受け取る
+  const q = new URLSearchParams(location.search);
+  const shared = [q.get('url'), q.get('text'), q.get('title')].filter(Boolean).join(' ');
+  if (shared) {
+    const m = shared.match(/https?:\/\/\S+/);
+    urlIn.value = m ? m[0] : shared;
+    history.replaceState(null, '', location.pathname);
+    run();
+  }
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
