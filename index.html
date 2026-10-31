@@ -131,6 +131,7 @@ details p{margin:8px 0}
     return { name: d.user_name, handle: d.user_screen_name, text: d.text, vids };
   }
 
+  const speed = bps => bps >= 1e6 ? (bps / 1e6).toFixed(1) + 'MB/s' : Math.round(bps / 1e3) + 'KB/s';
   const resOf = u => { const m = u.match(/\/(\d+)x(\d+)\//); return m ? [+m[1], +m[2]] : null; };
   const mb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'GB' : Math.max(0.1, n / 1e6).toFixed(1) + 'MB';
 
@@ -207,6 +208,15 @@ details p{margin:8px 0}
       st.querySelector('a').href = src;
     };
     btn.disabled = true; bar.style.display = 'block'; fill.style.width = '0';
+    let summary = '', hidden = false, lock = null, active = true;
+    // ダウンロード中は画面を消さない（iPhoneは画面が消えると通信を止めるため）
+    const keepAwake = async () => {
+      try { if (active && 'wakeLock' in navigator && document.visibilityState === 'visible') lock = await navigator.wakeLock.request('screen'); }
+      catch { /* 省電力モードなどで拒否された場合はそのまま続ける */ }
+    };
+    const onVis = () => { if (document.visibilityState === 'hidden') hidden = true; else keepAwake(); };
+    document.addEventListener('visibilitychange', onVis);
+    keepAwake();
     st.className = 'state'; st.textContent = 'ダウンロード中…';
     try {
       // 動画CDNは外部サイトのRefererを付けた要求を403で拒否するため、Refererを送らない
@@ -214,14 +224,28 @@ details p{margin:8px 0}
       if (!r.ok) throw new Error('http ' + r.status);
       const total = +r.headers.get('content-length') || 0;
       const reader = r.body.getReader(), chunks = [];
-      let got = 0;
+      const t0 = performance.now();
+      let got = 0, shown = 0;
+      const samples = [[t0, 0]];
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value); got += value.length;
-        if (total) { fill.style.width = (got / total * 100).toFixed(1) + '%'; st.textContent = `ダウンロード中… ${mb(got)} / ${mb(total)}`; }
-        else st.textContent = `ダウンロード中… ${mb(got)}`;
+        const now = performance.now();
+        samples.push([now, got]);
+        // 直近2秒の転送量から現在の速度を出す（表示更新は0.25秒ごと）
+        while (samples.length > 2 && now - samples[0][0] > 2000) samples.shift();
+        if (now - shown < 250) continue;
+        shown = now;
+        const [t1, g1] = samples[0];
+        const rate = now > t1 ? (got - g1) / ((now - t1) / 1000) : 0;
+        const prog = total ? `${mb(got)} / ${mb(total)}` : mb(got);
+        if (total) fill.style.width = (got / total * 100).toFixed(1) + '%';
+        st.textContent = `ダウンロード中… ${prog}　${speed(rate)}`;
       }
+      const secs = (performance.now() - t0) / 1000;
+      summary = `${mb(got)}、${secs.toFixed(1)}秒、平均${speed(got / Math.max(secs, 0.001))}`
+        + (hidden ? '。途中で画面が切り替わったため、その間は止まっていた可能性があります' : '');
       fill.style.width = '100%';
       const file = new File(chunks, name, { type: 'video/mp4' });
       const touch = matchMedia('(pointer: coarse)').matches;
@@ -231,7 +255,7 @@ details p{margin:8px 0}
         const share = async () => {
           try {
             await navigator.share({ files: [file] });
-            st.className = 'state ok'; st.textContent = '保存しました';
+            st.className = 'state ok'; st.textContent = `保存しました（${summary}）`;
             return true;
           } catch (e) {
             if (e.name === 'AbortError') { st.className = 'state'; st.textContent = '保存を取り消しました'; return true; }
@@ -242,7 +266,7 @@ details p{margin:8px 0}
         st.textContent = '共有メニューから「ビデオを保存」を選んでください';
         if (!(await share())) {
           st.className = 'state ok';
-          st.textContent = `ダウンロードが終わりました（${mb(file.size)}）`;
+          st.textContent = `ダウンロードが終わりました（${summary}）`;
           const again = document.createElement('button');
           again.type = 'button'; again.className = 'again'; again.textContent = '写真アプリに保存';
           again.addEventListener('click', async () => {
@@ -257,11 +281,16 @@ details p{margin:8px 0}
         a.href = URL.createObjectURL(file); a.download = name;
         document.body.append(a); a.click(); a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-        st.className = 'state ok'; st.textContent = `保存しました（${name}）`;
+        st.className = 'state ok'; st.textContent = `保存しました（${summary}）`;
       }
     } catch (e) {
       fail(e);
-    } finally { btn.disabled = false; }
+    } finally {
+      active = false;
+      document.removeEventListener('visibilitychange', onVis);
+      lock?.release().catch(() => {});
+      btn.disabled = false;
+    }
   }
 
   async function run() {

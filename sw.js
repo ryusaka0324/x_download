@@ -1,5 +1,5 @@
 // アプリ本体だけをキャッシュし、ポストと動画の取得は常にネットワークから行う
-const CACHE = 'xsave-v4';
+const CACHE = 'xsave-v5';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
